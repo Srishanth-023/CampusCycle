@@ -37,7 +37,7 @@ app.set('io', io);
 
 // Initialize Socket.IO handlers
 initializeSocket(io);
-
+console.log('MONGO_URI:', process.env.MONGO_URI);
 // Connect to MongoDB
 connectDB();
 
