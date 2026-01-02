@@ -5,6 +5,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter, usePathname } from 'expo-router';
 import { useTheme } from '../context/ThemeContext';
 
+type IoniconsName = keyof typeof Ionicons.glyphMap;
+
 interface BottomNavProps {
   activeRoute?: string;
 }
@@ -13,8 +15,8 @@ interface NavItemProps {
   item: {
     id: string;
     label: string;
-    icon: string;
-    activeIcon: string;
+    icon: IoniconsName;
+    activeIcon: IoniconsName;
     route: string;
     isCenter?: boolean;
   };
@@ -138,33 +140,39 @@ const BottomNav: React.FC<BottomNavProps> = ({ activeRoute }) => {
     router.push(route as any);
   };
 
-  const navItems = [
+  const navItems: Array<{
+    id: string;
+    label: string;
+    icon: IoniconsName;
+    activeIcon: IoniconsName;
+    route: string;
+  }> = [
     { 
       id: 'home', 
       label: 'Home', 
-      icon: 'home-outline', 
-      activeIcon: 'home',
+      icon: 'home-outline' as IoniconsName, 
+      activeIcon: 'home' as IoniconsName,
       route: '/home' 
     },
     { 
       id: 'status', 
       label: 'Status', 
-      icon: 'bicycle-outline', 
-      activeIcon: 'bicycle',
+      icon: 'bicycle-outline' as IoniconsName, 
+      activeIcon: 'bicycle' as IoniconsName,
       route: '/status'
     },
     { 
       id: 'history', 
       label: 'History', 
-      icon: 'time-outline', 
-      activeIcon: 'time',
+      icon: 'time-outline' as IoniconsName, 
+      activeIcon: 'time' as IoniconsName,
       route: '/history' 
     },
     { 
       id: 'profile', 
       label: 'Profile', 
-      icon: 'person-outline', 
-      activeIcon: 'person',
+      icon: 'person-outline' as IoniconsName, 
+      activeIcon: 'person' as IoniconsName,
       route: '/profile' 
     },
   ];
