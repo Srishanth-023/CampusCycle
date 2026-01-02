@@ -10,18 +10,47 @@ import {
   Platform,
   ScrollView,
   StatusBar,
+  Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 
 const LoginScreen = () => {
+  const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Valid credentials
+  const VALID_EMAIL = 'staff@gmail.com';
+  const VALID_PASSWORD = '123';
 
   const handleLogin = () => {
-    // Add your login logic here
-    console.log('Login attempt:', { email, password });
+    if (!email.trim() || !password.trim()) {
+      Alert.alert('Error', 'Please enter both email and password');
+      return;
+    }
+
+    if (email.trim() === VALID_EMAIL && password === VALID_PASSWORD) {
+      setIsLoading(true);
+      
+      setTimeout(() => {
+        setIsLoading(false);
+        // Pass email as parameter to home screen
+        router.push({
+          pathname: '/home',
+          params: { email: email.trim() }
+        });
+      }, 500);
+    } else {
+      Alert.alert(
+        'Invalid Credentials',
+        'Please check your email and password and try again.',
+        [{ text: 'OK' }]
+      );
+    }
   };
 
   return (
@@ -56,6 +85,14 @@ const LoginScreen = () => {
               Sign in to access your cycle
             </Text>
 
+            {/* Demo Credentials Info */}
+            <View style={styles.demoInfo}>
+              <Ionicons name="information-circle" size={16} color="#CDFF00" />
+              <Text style={styles.demoText}>
+                Demo: staff@gmail.com / 123
+              </Text>
+            </View>
+
             {/* Email Input */}
             <View style={styles.inputContainer}>
               <Text style={styles.label}>Staff Email</Text>
@@ -74,6 +111,7 @@ const LoginScreen = () => {
                   onChangeText={setEmail}
                   keyboardType="email-address"
                   autoCapitalize="none"
+                  editable={!isLoading}
                 />
               </View>
             </View>
@@ -96,10 +134,12 @@ const LoginScreen = () => {
                   onChangeText={setPassword}
                   secureTextEntry={!isPasswordVisible}
                   autoCapitalize="none"
+                  editable={!isLoading}
                 />
                 <TouchableOpacity
                   onPress={() => setIsPasswordVisible(!isPasswordVisible)}
                   style={styles.eyeIcon}
+                  disabled={isLoading}
                 >
                   <Ionicons 
                     name={isPasswordVisible ? 'eye-outline' : 'eye-off-outline'} 
@@ -111,29 +151,39 @@ const LoginScreen = () => {
             </View>
 
             {/* Forgot Password */}
-            <TouchableOpacity style={styles.forgotPassword}>
+            <TouchableOpacity 
+              style={styles.forgotPassword}
+              disabled={isLoading}
+            >
               <Text style={styles.forgotText}>Forgot Password?</Text>
             </TouchableOpacity>
 
             {/* Login Button */}
             <TouchableOpacity
-              style={styles.loginButton}
+              style={[styles.loginButton, isLoading && styles.loginButtonDisabled]}
               onPress={handleLogin}
               activeOpacity={0.8}
+              disabled={isLoading}
             >
               <LinearGradient
-                colors={['#CDFF00', '#A3CC00']}
+                colors={isLoading ? ['#999', '#666'] : ['#CDFF00', '#A3CC00']}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
                 style={styles.loginGradient}
               >
-                <Text style={styles.loginButtonText}>Sign In</Text>
-                <Ionicons 
-                  name="arrow-forward" 
-                  size={20} 
-                  color="#0A0A0A" 
-                  style={styles.buttonIcon}
-                />
+                {isLoading ? (
+                  <Text style={styles.loginButtonText}>Signing In...</Text>
+                ) : (
+                  <>
+                    <Text style={styles.loginButtonText}>Sign In</Text>
+                    <Ionicons 
+                      name="arrow-forward" 
+                      size={20} 
+                      color="#0A0A0A" 
+                      style={styles.buttonIcon}
+                    />
+                  </>
+                )}
               </LinearGradient>
             </TouchableOpacity>
           </View>
@@ -154,7 +204,7 @@ const LoginScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0a0a0aff',
+    backgroundColor: '#0A0A0A',
   },
   keyboardView: {
     flex: 1,
@@ -207,7 +257,24 @@ const styles = StyleSheet.create({
   loginSubtext: {
     fontSize: 14,
     color: '#999',
-    marginBottom: 30,
+    marginBottom: 20,
+  },
+  demoInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(205, 255, 0, 0.1)',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    marginBottom: 20,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(205, 255, 0, 0.2)',
+  },
+  demoText: {
+    fontSize: 12,
+    color: '#CDFF00',
+    fontWeight: '600',
   },
   inputContainer: {
     marginBottom: 20,
@@ -254,6 +321,9 @@ const styles = StyleSheet.create({
   loginButton: {
     borderRadius: 16,
     overflow: 'hidden',
+  },
+  loginButtonDisabled: {
+    opacity: 0.7,
   },
   loginGradient: {
     paddingVertical: 18,
