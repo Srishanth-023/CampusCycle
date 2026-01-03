@@ -38,10 +38,11 @@ const rideHistory = [];
 const activeBookings = new Map(); // token -> { cycleId, cycleName, startTime }
 
 // ===== ESP32 HARDWARE INTEGRATION =====
-// RFID to User mapping
-const rfidToUser = new Map();
-rfidToUser.set("123456789", "admin");    // Add your RFID card numbers here
-rfidToUser.set("987654321", "student");
+// RFID to Cycle mapping (each cycle has an RFID tag)
+const rfidToCycle = new Map();
+rfidToCycle.set("0004002722", "A");    // Cycle A's RFID tag
+
+
 
 // RFID scan logs (for analytics)
 const rfidLogs = [];
@@ -308,7 +309,7 @@ app.get('/api/health', (req, res) => {
 // ===== ESP32 HARDWARE ENDPOINTS =====
 // =====================================================
 
-// POST /rfid - ESP32 sends RFID scan here
+// POST /rfid - ESP32 sends RFID scan when cycle is docked/returned
 app.post('/rfid', (req, res) => {
   const { rfid } = req.body;
   
@@ -324,76 +325,102 @@ app.post('/rfid', (req, res) => {
     timestamp: new Date().toISOString()
   });
   
-  // Check if RFID is registered
-  const username = rfidToUser.get(rfid);
+  // Check which cycle this RFID belongs to
+  const cycleId = rfidToCycle.get(rfid);
   
-  if (!username) {
-    console.log(`❌ Unknown RFID: ${rfid}`);
+  if (!cycleId) {
+    console.log(`❌ Unknown RFID tag: ${rfid}`);
     return res.json({ 
       success: false, 
-      message: 'RFID not registered',
-      action: 'DENY'
+      message: 'RFID tag not registered to any cycle',
+      action: 'UNKNOWN_CYCLE'
     });
   }
   
-  // Find user's active booking
-  let userToken = null;
-  let booking = null;
+  const cycle = cycles.find(c => c.id === cycleId);
   
-  for (const [token, userData] of sessions.entries()) {
-    if (userData.username === username && activeBookings.has(token)) {
-      userToken = token;
-      booking = activeBookings.get(token);
-      break;
+  if (!cycle) {
+    console.log(`❌ Cycle ${cycleId} not found in system`);
+    return res.json({
+      success: false,
+      message: 'Cycle not found',
+      action: 'ERROR'
+    });
+  }
+  
+  // Check if cycle is currently in use (being returned)
+  if (cycle.status === 'IN_USE') {
+    // Find who has this cycle booked
+    let userToken = null;
+    let booking = null;
+    let username = null;
+    
+    for (const [token, bookingData] of activeBookings.entries()) {
+      if (bookingData.cycleId === cycleId) {
+        userToken = token;
+        booking = bookingData;
+        username = sessions.get(token)?.username || 'unknown';
+        break;
+      }
     }
-  }
-  
-  if (!booking) {
-    console.log(`ℹ️ RFID ${rfid} (${username}) - No active booking`);
+    
+    if (booking) {
+      // Process cycle return
+      setCycleStatus(cycleId, 'AVAILABLE');
+      
+      const endTime = new Date().toISOString();
+      const startTime = new Date(booking.startTime);
+      const duration = Math.floor((new Date() - startTime) / 60000); // minutes
+      
+      // Add to history
+      rideHistory.push({
+        id: `ride_${Date.now()}`,
+        username: username,
+        cycleId: cycleId,
+        cycleName: cycle.name,
+        startTime: booking.startTime,
+        endTime: endTime,
+        duration: duration,
+        distance: (Math.random() * 5 + 1).toFixed(1)
+      });
+      
+      activeBookings.delete(userToken);
+      
+      console.log(`✅ ${cycle.name} returned via RFID by ${username} (${duration} min ride)`);
+      
+      return res.json({
+        success: true,
+        message: 'Cycle returned successfully',
+        cycle: cycle.name,
+        cycleId: cycleId,
+        returnedBy: username,
+        duration: duration,
+        action: 'RETURN_SUCCESS'
+      });
+    }
+    
+    // Cycle marked IN_USE but no booking found - reset it
+    console.log(`⚠️ ${cycle.name} was IN_USE but no booking found, resetting to AVAILABLE`);
+    setCycleStatus(cycleId, 'AVAILABLE');
+    
     return res.json({
       success: true,
-      message: 'RFID recognized, no active booking',
-      username: username,
-      action: 'ACKNOWLEDGE'
+      message: 'Cycle status reset to available',
+      cycle: cycle.name,
+      action: 'RESET'
     });
   }
   
-  // Process cycle return
-  const cycle = cycles.find(c => c.id === booking.cycleId);
-  if (cycle) {
-    setCycleStatus(booking.cycleId, 'AVAILABLE');
-    
-    const endTime = new Date().toISOString();
-    const startTime = new Date(booking.startTime);
-    const duration = Math.floor((new Date() - startTime) / 60000); // minutes
-    
-    // Add to history
-    rideHistory.push({
-      id: `ride_${Date.now()}`,
-      username: username,
-      cycleId: booking.cycleId,
-      cycleName: booking.cycleName,
-      startTime: booking.startTime,
-      endTime: endTime,
-      duration: duration,
-      distance: (Math.random() * 5 + 1).toFixed(1)
-    });
-    
-    activeBookings.delete(userToken);
-    
-    console.log(`✅ Cycle ${booking.cycleName} returned via RFID by ${username}`);
-    
-    return res.json({
-      success: true,
-      message: 'Cycle returned successfully',
-      username: username,
-      cycle: booking.cycleName,
-      duration: duration,
-      action: 'RETURN_SUCCESS'
-    });
-  }
-  
-  res.json({ success: false, message: 'Error processing return' });
+  // Cycle is already available - just acknowledge the scan
+  console.log(`ℹ️ ${cycle.name} scanned (already available)`);
+  return res.json({
+    success: true,
+    message: 'Cycle is already available',
+    cycle: cycle.name,
+    cycleId: cycleId,
+    status: cycle.status,
+    action: 'ALREADY_AVAILABLE'
+  });
 });
 
 // GET /command - ESP32 polls this for unlock commands
@@ -434,46 +461,52 @@ app.get('/api/rfid/logs', authenticate, (req, res) => {
   });
 });
 
-// POST /api/rfid/register - Register new RFID card
+// POST /api/rfid/register - Register RFID tag to a cycle
 app.post('/api/rfid/register', authenticate, (req, res) => {
-  const { rfid, username } = req.body;
+  const { rfid, cycleId } = req.body;
   
-  if (!rfid || !username) {
+  if (!rfid || !cycleId) {
     return res.status(400).json({
       success: false,
-      message: 'RFID and username required'
+      message: 'RFID and cycleId required'
     });
   }
   
-  const user = users.find(u => u.username === username);
-  if (!user) {
+  const cycle = cycles.find(c => c.id === cycleId);
+  if (!cycle) {
     return res.status(404).json({
       success: false,
-      message: 'User not found'
+      message: 'Cycle not found'
     });
   }
   
-  rfidToUser.set(rfid, username);
-  console.log(`🔖 RFID ${rfid} registered to ${username}`);
+  rfidToCycle.set(rfid, cycleId);
+  console.log(`🔖 RFID ${rfid} registered to ${cycle.name}`);
   
   res.json({
     success: true,
-    message: `RFID registered to ${username}`,
-    rfid: rfid
+    message: `RFID tag registered to ${cycle.name}`,
+    rfid: rfid,
+    cycleId: cycleId,
+    cycleName: cycle.name
   });
 });
 
-// GET /api/rfid/cards - List registered RFID cards
-app.get('/api/rfid/cards', authenticate, (req, res) => {
-  const cards = Array.from(rfidToUser.entries()).map(([rfid, username]) => ({
-    rfid,
-    username
-  }));
+// GET /api/rfid/tags - List registered RFID tags for cycles
+app.get('/api/rfid/tags', authenticate, (req, res) => {
+  const tags = Array.from(rfidToCycle.entries()).map(([rfid, cycleId]) => {
+    const cycle = cycles.find(c => c.id === cycleId);
+    return {
+      rfid,
+      cycleId,
+      cycleName: cycle?.name || 'Unknown'
+    };
+  });
   
   res.json({
     success: true,
-    count: cards.length,
-    cards: cards
+    count: tags.length,
+    tags: tags
   });
 });
 
@@ -482,7 +515,7 @@ app.get('/api/hardware/status', (req, res) => {
   res.json({
     success: true,
     unlockPending: unlockFlag,
-    registeredCards: rfidToUser.size,
+    registeredTags: rfidToCycle.size,
     activeBookings: activeBookings.size,
     recentScans: rfidLogs.slice(-5)
   });
@@ -494,12 +527,12 @@ app.listen(PORT, () => {
   console.log(`📊 Station: ${station.name}`);
   console.log(`🚲 Cycles: ${cycles.length} total`);
   console.log(`👥 Users: ${users.length} registered`);
-  console.log(`🔖 RFID Cards: ${rfidToUser.size} registered`);
+  console.log(`🔖 RFID Tags: ${rfidToCycle.size} registered to cycles`);
   console.log('\n===== ESP32 Hardware Endpoints =====');
-  console.log(`POST /rfid          ← ESP32 sends RFID scans`);
-  console.log(`GET  /command       ← ESP32 polls for unlock`);
+  console.log(`POST /rfid           ← ESP32 sends cycle RFID when docked`);
+  console.log(`GET  /command        ← ESP32 polls for unlock command`);
   console.log(`POST /command/unlock ← App triggers unlock`);
-  console.log(`GET  /api/rfid/logs  ← View scan history`);
+  console.log(`GET  /api/rfid/tags  ← List cycle RFID tags`);
   console.log(`GET  /api/hardware/status ← Debug info`);
   console.log('=====================================\n');
 });

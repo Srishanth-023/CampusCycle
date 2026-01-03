@@ -11,7 +11,7 @@ const char* WIFI_PASS = "12345678";
 
 /* ================= BACKEND URLs ================= */
 const char* POST_URL = "http://10.147.233.168:3000/rfid";
-const char* GET_URL  = "http://192.168.31.137:5000/command";
+const char* GET_URL  = "http://10.147.233.168:3000/command";
 
 /* ================= RFID VARIABLES ================= */
 String buffer = "";

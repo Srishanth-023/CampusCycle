@@ -23,17 +23,37 @@ CampusCycle is a college cycle-sharing application that enables students to book
 ## 🏗️ Architecture
 
 ```
-┌─────────────────┐         ┌──────────────────┐
-│  Mobile App     │◄───────►│  Backend API     │
-│  (React Native) │  REST   │  (Node.js)       │
-└─────────────────┘         └──────────────────┘
-                                    │
-                                    │ (Future)
-                                    ▼
-                            ┌──────────────────┐
-                            │  ESP32 + MQTT    │
-                            │  (Hardware)      │
-                            └──────────────────┘
+┌─────────────────┐         ┌──────────────────┐         ┌─────────────────┐
+│   Expo App      │         │  Node.js Backend │         │     ESP32       │
+│  (React Native) │◄───────►│   (Port 3000)    │◄───────►│   Hardware      │
+└─────────────────┘  REST   └──────────────────┘  HTTP   └─────────────────┘
+                                    │                           │
+       POST /api/book ──────────────┤                           │
+       POST /api/return ────────────┤                           │
+       GET  /api/cycles ────────────┤                           │
+                                    │                           │
+                            POST /rfid ◄────────────────────────┤ Cycle RFID Tag
+                            GET /command ───────────────────────► Unlock/Lock
+```
+
+### RFID = Cycle Identification
+
+**Important:** The RFID tags are attached to **cycles, not users**.
+
+- Each cycle (A, B, C, D) has a unique RFID tag
+- When a cycle is docked, the station reads its RFID
+- Backend identifies which cycle was returned
+
+### Data Flow
+
+**Booking Flow (App → Hardware):**
+```
+User books cycle in app → Backend sets unlock=true → ESP32 polls /command → Lock opens 🔓
+```
+
+**Return Flow (Hardware → Backend):**
+```
+User docks cycle → RFID reader scans cycle tag → ESP32 sends to /rfid → Backend marks cycle AVAILABLE → Lock closes 🔒
 ```
 
 ---
@@ -109,17 +129,114 @@ CampusCycle is a college cycle-sharing application that enables students to book
 - ✅ Return system with ride statistics
 - ✅ Connection testing functionality
 - ✅ Cross-platform mobile support
+- ✅ **ESP32 Hardware Integration**
+- ✅ **RFID-based cycle return**
+- ✅ **Remote unlock via app**
 
 ### Planned
 
-- 🔄 Database integration (PostgreSQL/MongoDB)
-- 🔄 ESP32/MQTT hardware communication
+- 🔄 Database integration (MongoDB)
 - 🔄 Multi-station support
 - 🔄 User registration system
 - 🔄 Payment gateway integration
 - 🔄 GPS tracking
 - 🔄 Push notifications
 - 🔄 Admin dashboard
+
+---
+
+## 🔌 Hardware Integration (ESP32)
+
+### Hardware Requirements
+
+| Component | Purpose |
+|-----------|---------|
+| ESP32 Dev Board | Main controller |
+| RFID Reader (RC522/EM18) | Card scanning |
+| Relay Module (5V) | Lock control |
+| Solenoid/Electric Lock | Physical lock |
+
+### Wiring Diagram
+
+```
+ESP32 Pin    →    Component
+─────────────────────────────
+GPIO 16      →    RFID Reader (RX)
+GPIO 26      →    Relay Module (IN)
+5V           →    Power Rails
+GND          →    Ground Rails
+```
+
+### ESP32 Configuration
+
+Update the following in `hardware.md` before flashing:
+
+```cpp
+/* ================= WIFI CONFIG ================= */
+const char* WIFI_SSID = "YOUR_WIFI_NAME";
+const char* WIFI_PASS = "YOUR_WIFI_PASSWORD";
+
+/* ================= BACKEND URLs ================= */
+const char* POST_URL = "http://YOUR_BACKEND_IP:3000/rfid";
+const char* GET_URL  = "http://YOUR_BACKEND_IP:3000/command";
+```
+
+### Get Your Backend IP
+
+```bash
+# Linux/Mac
+hostname -I | awk '{print $1}'
+
+# Windows
+ipconfig | findstr IPv4
+```
+
+### Hardware API Endpoints
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/rfid` | POST | ESP32 sends cycle RFID when docked |
+| `/command` | GET | ESP32 polls for unlock command |
+| `/command/unlock` | POST | App triggers unlock |
+| `/api/rfid/tags` | GET | List cycle RFID registrations |
+| `/api/hardware/status` | GET | Debug hardware state |
+
+### Lock Behavior
+
+| Trigger | Action | Auto-Revert |
+|---------|--------|-------------|
+| App Booking | UNLOCK | Lock after 20s |
+| RFID Tap | LOCK | Open after 10s |
+| Startup | OPEN | — (default) |
+
+### How RFID Works (Cycle Identification)
+
+**Each cycle has an RFID tag attached to it.** When a cycle is returned to the station:
+
+1. User docks the cycle at the station
+2. RFID reader scans the cycle's tag
+3. ESP32 sends the RFID to backend
+4. Backend identifies which cycle was returned
+5. Backend marks that cycle as AVAILABLE
+6. User's ride is completed
+
+### Register Cycle RFID Tags
+
+Add your cycle RFID tags in `backend/server.js`:
+
+```javascript
+// Around line 40 - Map RFID tags to cycles
+rfidToCycle.set("123456789", "A");    // Cycle A's RFID tag
+rfidToCycle.set("987654321", "B");    // Cycle B's RFID tag
+rfidToCycle.set("111222333", "C");    // Cycle C's RFID tag
+rfidToCycle.set("444555666", "D");    // Cycle D's RFID tag
+```
+
+**To find an RFID tag number:**
+1. Flash ESP32 and open Serial Monitor (115200 baud)
+2. Scan the RFID tag attached to a cycle
+3. Look for: `RFID DEC: 123456789` ← Use this number
+4. Register it to the corresponding cycle ID
 
 ---
 
@@ -135,12 +252,73 @@ CampusCycle is a college cycle-sharing application that enables students to book
 - **Framework**: React Native
 - **SDK**: Expo 51
 - **State Management**: React Hooks
-- **Navigation**: Single-screen (v1.0)
+- **Navigation**: Expo Router
 
-### Future Integrations
-- **Hardware**: ESP32 with MQTT protocol
-- **Database**: PostgreSQL or MongoDB
-- **Analytics**: Custom tracking system
+### Hardware
+- **Microcontroller**: ESP32
+- **Communication**: HTTP REST (polling)
+- **RFID**: EM18/RC522 compatible
+- **Lock Control**: Relay-based
+
+---
+
+## 🚀 Quick Start (5 Minutes)
+
+### Step 1: Get Your IP Address
+
+```bash
+hostname -I | awk '{print $1}'
+# Example output: 192.168.1.100
+```
+
+### Step 2: Start Backend
+
+```bash
+cd backend
+npm install
+node server.js
+```
+
+**Expected output:**
+```
+🚀 CampusCycle Backend running on http://localhost:3000
+📊 Station: Main Station
+🚲 Cycles: 4 total
+🔖 RFID Tags: 4 registered to cycles
+```
+
+### Step 3: Configure Mobile App
+
+Update `client-app/services/api.ts`:
+
+```typescript
+const API_BASE_URL = Platform.OS === 'web' 
+  ? 'http://localhost:3000/api'
+  : 'http://192.168.1.100:3000/api'; // ← Your IP
+```
+
+### Step 4: Start Mobile App
+
+```bash
+cd client-app
+npm install
+npm start
+```
+
+Press `w` for web or scan QR with Expo Go.
+
+### Step 5: Configure ESP32 (Optional)
+
+Update `hardware.md`:
+
+```cpp
+const char* WIFI_SSID = "YOUR_WIFI";
+const char* WIFI_PASS = "YOUR_PASSWORD";
+const char* POST_URL = "http://192.168.1.100:3000/rfid";
+const char* GET_URL  = "http://192.168.1.100:3000/command";
+```
+
+Flash to ESP32 using Arduino IDE.
 
 ---
 
@@ -174,31 +352,69 @@ curl -X POST http://localhost:3000/api/login \
   -d '{"username":"admin","password":"password"}'
 ```
 
+### Hardware Testing
+
+```bash
+# Check hardware status
+curl http://localhost:3000/api/hardware/status
+
+# Simulate ESP32 RFID scan
+curl -X POST http://localhost:3000/rfid \
+  -H "Content-Type: application/json" \
+  -d '{"rfid":"123456789"}'
+
+# Check unlock command (ESP32 polls this)
+curl http://localhost:3000/command
+
+# Trigger unlock (after login)
+TOKEN="your_token_here"
+curl -X POST http://localhost:3000/command/unlock \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+### ESP32 Serial Monitor Output
+
+When working correctly, you should see:
+
+```
+WiFi Connected
+SYSTEM READY
+LOCK STATUS: OPEN 🔓
+--------------------------------
+POST /rfid STATUS: 200          ← RFID working
+GET /command STATUS: 200        ← Polling working
+WEB COMMAND: UNLOCK             ← Unlock received
+RFID HEX: A1B2C3D4E5
+RFID DEC: 123456789
+LOCK CLOSED BY RFID 🔒
+```
+
 ---
 
-## � Project Structure
+## 📁 Project Structure
 
 ```
 CampusCycle/
-├── backend/              # Backend API server
-│   ├── server.js        # Main application logic
-│   ├── package.json     # Dependencies
-│   └── .gitignore       # Ignore rules
+├── backend/                 # Node.js API server
+│   ├── server.js           # Main server with hardware endpoints
+│   └── package.json        # Dependencies
 │
-├── mobile-app/          # Mobile application
-│   ├── App.js          # Main component
-│   ├── app.json        # Expo config
-│   ├── package.json    # Dependencies
-│   └── .gitignore      # Ignore rules
+├── client-app/             # Expo React Native app
+│   ├── app/               # Screen components
+│   ├── services/api.ts    # API service
+│   ├── context/           # Auth & Theme context
+│   └── package.json       # Dependencies
 │
-├── SETUP.md            # Detailed setup guide
-├── README.md           # This file
-└── .gitignore          # Root ignore rules
+├── hardware.md             # ESP32 Arduino code
+├── README.md              # This file
+└── SETUP.md               # Detailed setup guide
 ```
 
 ---
 
 ## 🐛 Troubleshooting
+
+### Software Issues
 
 | Issue | Solution |
 |-------|----------|
@@ -206,6 +422,24 @@ CampusCycle/
 | Cannot connect | Check same WiFi & IP address |
 | SDK mismatch | Reinstall with `--legacy-peer-deps` |
 | Metro bundler | Clear cache: `npm start -- --clear` |
+
+### Hardware Issues
+
+| Issue | Solution |
+|-------|----------|
+| ESP32 won't connect WiFi | Use 2.4GHz network, check credentials |
+| HTTP -1 or 404 errors | Verify backend IP in ESP32 code |
+| RFID not recognized | Register card in `server.js`, check decimal number |
+| Lock not responding | Check relay wiring (GPIO 26), test relay LED |
+| Unlock not working | Verify ESP32 polls show 200 status |
+
+### Debug Checklist
+
+- [ ] Backend running? `curl http://localhost:3000/api/health`
+- [ ] ESP32 connected to WiFi? Check Serial Monitor
+- [ ] Same network? Phone, computer, ESP32 on same WiFi
+- [ ] Correct IP? `hostname -I` shows your IP
+- [ ] RFID registered? Check `rfidToUser` in server.js
 
 See [SETUP.md](SETUP.md) for more troubleshooting help.
 
