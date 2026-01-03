@@ -11,47 +11,54 @@ import {
   ScrollView,
   StatusBar,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { useAuth } from '../context/AuthContext';
 
 const LoginScreen = () => {
   const router = useRouter();
-  const [email, setEmail] = useState('');
+  const { login, testConnection, isLoading: authLoading } = useAuth();
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Valid credentials
-  const VALID_EMAIL = 'staff@gmail.com';
-  const VALID_PASSWORD = '123';
-
-  const handleLogin = () => {
-    if (!email.trim() || !password.trim()) {
-      Alert.alert('Error', 'Please enter both email and password');
+  const handleLogin = async () => {
+    if (!username.trim() || !password.trim()) {
+      Alert.alert('Error', 'Please enter both username and password');
       return;
     }
 
-    if (email.trim() === VALID_EMAIL && password === VALID_PASSWORD) {
-      setIsLoading(true);
+    setIsLoading(true);
+    try {
+      const success = await login(username.trim(), password.trim());
       
-      setTimeout(() => {
-        setIsLoading(false);
-        // Pass email as parameter to home screen
-        router.push({
+      if (success) {
+        router.replace({
           pathname: '/home',
-          params: { email: email.trim() }
+          params: { username: username.trim() }
         });
-      }, 500);
-    } else {
-      Alert.alert(
-        'Invalid Credentials',
-        'Please check your email and password and try again.',
-        [{ text: 'OK' }]
-      );
+      }
+    } catch (error: any) {
+      Alert.alert('Login Failed', error.message || 'Invalid credentials');
+    } finally {
+      setIsLoading(false);
     }
   };
+
+  if (authLoading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#CDFF00" />
+          <Text style={styles.loadingText}>Loading...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -89,27 +96,26 @@ const LoginScreen = () => {
             <View style={styles.demoInfo}>
               <Ionicons name="information-circle" size={16} color="#CDFF00" />
               <Text style={styles.demoText}>
-                Demo: staff@gmail.com / 123
+                Demo: admin / password  or  student / student123
               </Text>
             </View>
 
-            {/* Email Input */}
+            {/* Username Input */}
             <View style={styles.inputContainer}>
-              <Text style={styles.label}>Staff Email</Text>
+              <Text style={styles.label}>Username</Text>
               <View style={styles.inputWrapper}>
                 <Ionicons 
-                  name="mail-outline" 
+                  name="person-outline" 
                   size={20} 
                   color="#666" 
                   style={styles.inputIcon}
                 />
                 <TextInput
                   style={styles.input}
-                  placeholder="Enter your email"
+                  placeholder="Enter your username"
                   placeholderTextColor="#666"
-                  value={email}
-                  onChangeText={setEmail}
-                  keyboardType="email-address"
+                  value={username}
+                  onChangeText={setUsername}
                   autoCapitalize="none"
                   editable={!isLoading}
                 />
@@ -150,14 +156,6 @@ const LoginScreen = () => {
               </View>
             </View>
 
-            {/* Forgot Password */}
-            <TouchableOpacity 
-              style={styles.forgotPassword}
-              disabled={isLoading}
-            >
-              <Text style={styles.forgotText}>Forgot Password?</Text>
-            </TouchableOpacity>
-
             {/* Login Button */}
             <TouchableOpacity
               style={[styles.loginButton, isLoading && styles.loginButtonDisabled]}
@@ -172,7 +170,7 @@ const LoginScreen = () => {
                 style={styles.loginGradient}
               >
                 {isLoading ? (
-                  <Text style={styles.loginButtonText}>Signing In...</Text>
+                  <ActivityIndicator color="#0A0A0A" />
                 ) : (
                   <>
                     <Text style={styles.loginButtonText}>Sign In</Text>
@@ -205,6 +203,16 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0A0A0A',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    color: '#CDFF00',
+    marginTop: 16,
+    fontSize: 16,
   },
   keyboardView: {
     flex: 1,
@@ -272,9 +280,10 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(205, 255, 0, 0.2)',
   },
   demoText: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#CDFF00',
     fontWeight: '600',
+    flex: 1,
   },
   inputContainer: {
     marginBottom: 20,
@@ -308,19 +317,10 @@ const styles = StyleSheet.create({
   eyeIcon: {
     padding: 8,
   },
-  forgotPassword: {
-    alignSelf: 'flex-end',
-    marginBottom: 24,
-    marginTop: -8,
-  },
-  forgotText: {
-    color: '#CDFF00',
-    fontSize: 13,
-    fontWeight: '600',
-  },
   loginButton: {
     borderRadius: 16,
     overflow: 'hidden',
+    marginTop: 10,
   },
   loginButtonDisabled: {
     opacity: 0.7,

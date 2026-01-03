@@ -12,27 +12,24 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useTheme } from '../context/ThemeContext';
+import { useAuth } from '../context/AuthContext';
 import BottomNav from './BottomNav';
 
 const HomeScreen = () => {
   const router = useRouter();
-  const params = useLocalSearchParams();
   const { colors, isDark } = useTheme();
+  const { user, logout } = useAuth();
   const [userName, setUserName] = useState('User');
   const [notifications, setNotifications] = useState<any[]>([]);
 
-  // Extract username from email
+  // Extract username from user context
   useEffect(() => {
-    if (params.email) {
-      const email = params.email as string;
-      const extractedName = email.split('@')[0];
-      // Capitalize first letter
-      const formattedName = extractedName.charAt(0).toUpperCase() + extractedName.slice(1);
-      setUserName(formattedName);
+    if (user?.username) {
+      setUserName(user.username);
     }
-  }, [params.email]);
+  }, [user]);
 
   const cycleStands = [
     { 
@@ -74,18 +71,23 @@ const HomeScreen = () => {
   ];
 
   const handleStandPress = (stand: any) => {
-    // View stand details
-    Alert.alert(
-      stand.name,
-      `Location: Main Campus\nAvailable Cycles: ${stand.available}/${stand.total}\nStatus: ${stand.isActive ? 'Active' : 'Coming Soon'}`,
-      [{ text: 'OK' }]
-    );
+    if (stand.isActive) {
+      // Navigate to booking page for active stands
+      router.push('/booking');
+    } else {
+      // Show coming soon alert for inactive stands
+      Alert.alert(
+        stand.name,
+        `Location: Main Campus\nAvailable Cycles: ${stand.available}/${stand.total}\nStatus: Coming Soon`,
+        [{ text: 'OK' }]
+      );
+    }
   };
 
   const handleProfilePress = () => {
     Alert.alert(
       'Profile',
-      `Logged in as: ${userName}\nEmail: ${params.email || 'staff@gmail.com'}`,
+      `Logged in as: ${userName}\nEmail: ${user?.email || 'user@campus.com'}`,
       [
         {
           text: 'Logout',
@@ -98,7 +100,10 @@ const HomeScreen = () => {
                 { text: 'Cancel', style: 'cancel' },
                 {
                   text: 'Logout',
-                  onPress: () => router.replace('/'),
+                  onPress: async () => {
+                    await logout();
+                    router.replace('/');
+                  },
                 },
               ]
             );
@@ -117,23 +122,7 @@ const HomeScreen = () => {
         [{ text: 'OK' }]
       );
     } else {
-      // Show notifications list
       Alert.alert('Notifications', 'Your notifications will appear here.');
-    }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'available':
-        return '#CDFF00';
-      case 'limited':
-        return '#FFA500';
-      case 'full':
-        return '#FF4444';
-      case 'coming-soon':
-        return '#666';
-      default:
-        return '#666';
     }
   };
 

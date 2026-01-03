@@ -29,7 +29,13 @@ const users = [
 ];
 
 // Simple session store (in-memory)
-const sessions = new Set();
+const sessions = new Map(); // Changed to Map to store user info with token
+
+// Ride history store (in-memory)
+const rideHistory = [];
+
+// Active bookings store
+const activeBookings = new Map(); // token -> { cycleId, cycleName, startTime }
 
 // ===== HARDWARE-COMPATIBLE HELPER FUNCTIONS =====
 // These functions will later contain MQTT/ESP32 communication
@@ -76,6 +82,10 @@ function authenticate(req, res, next) {
     });
   }
   
+  // Attach user info to request
+  req.userToken = token;
+  req.user = sessions.get(token);
+  
   next();
 }
 
@@ -102,7 +112,7 @@ app.post('/api/login', (req, res) => {
   }
   
   const token = generateSessionToken();
-  sessions.add(token);
+  sessions.set(token, { username: user.username });
   
   console.log(`✅ User ${username} logged in successfully`);
   
@@ -118,6 +128,7 @@ app.post('/api/login', (req, res) => {
 app.post('/api/logout', authenticate, (req, res) => {
   const token = req.headers.authorization?.replace('Bearer ', '');
   sessions.delete(token);
+  activeBookings.delete(token);
   
   res.json({
     success: true,
@@ -166,6 +177,15 @@ app.post('/api/book', authenticate, (req, res) => {
   unlockCycle(cycleId); // Hardware compatibility function
   
   const otp = generateOTP();
+  const bookingTime = new Date().toISOString();
+  
+  // Store active booking
+  activeBookings.set(req.userToken, {
+    cycleId,
+    cycleName: cycle.name,
+    startTime: bookingTime,
+    otp
+  });
   
   console.log(`📱 Cycle ${cycleId} booked successfully, OTP: ${otp}`);
   
@@ -174,7 +194,7 @@ app.post('/api/book', authenticate, (req, res) => {
     message: 'Cycle booked successfully',
     cycle: cycle,
     otp: otp,
-    bookingTime: new Date().toISOString()
+    bookingTime: bookingTime
   });
 });
 
@@ -209,12 +229,33 @@ app.post('/api/return', authenticate, (req, res) => {
   setCycleStatus(cycleId, 'AVAILABLE');
   lockCycle(cycleId); // Hardware compatibility function
   
+  // Get booking info before removing
+  const booking = activeBookings.get(req.userToken);
+  const endTime = new Date().toISOString();
+  
   // Mock ride statistics
   const rideStats = {
     duration: Math.floor(Math.random() * 60 + 15), // 15-75 minutes
     distance: (Math.random() * 5 + 1).toFixed(1), // 1-6 km
-    returnTime: new Date().toISOString()
+    returnTime: endTime
   };
+  
+  // Add to ride history
+  if (booking) {
+    rideHistory.push({
+      id: `ride_${Date.now()}`,
+      username: req.user.username,
+      cycleId: cycleId,
+      cycleName: cycle.name,
+      startTime: booking.startTime,
+      endTime: endTime,
+      duration: rideStats.duration,
+      distance: rideStats.distance
+    });
+    
+    // Remove active booking
+    activeBookings.delete(req.userToken);
+  }
   
   console.log(`🚲 Cycle ${cycleId} returned successfully`);
   
@@ -223,6 +264,19 @@ app.post('/api/return', authenticate, (req, res) => {
     message: 'Cycle returned successfully',
     cycle: cycle,
     rideStats: rideStats
+  });
+});
+
+// Get ride history
+app.get('/api/history', authenticate, (req, res) => {
+  // Filter history for current user
+  const userHistory = rideHistory
+    .filter(ride => ride.username === req.user.username)
+    .sort((a, b) => new Date(b.endTime) - new Date(a.endTime));
+  
+  res.json({
+    success: true,
+    history: userHistory
   });
 });
 
