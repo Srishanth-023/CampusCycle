@@ -145,14 +145,14 @@ const StatusScreen = () => {
           </View>
         </View>
 
-        {/* OTP Card */}
+        {/* Hardware Status Card */}
         <View style={styles.otpCard}>
           <View style={styles.otpHeader}>
-            <Ionicons name="key" size={20} color="#856404" />
-            <Text style={styles.otpLabel}>Unlock OTP</Text>
+            <Ionicons name="hardware-chip" size={20} color="#856404" />
+            <Text style={styles.otpLabel}>Hardware Status</Text>
           </View>
-          <Text style={styles.otpValue}>{activeBooking.otp}</Text>
-          <Text style={styles.otpHint}>Use this code to unlock the cycle</Text>
+          <Text style={styles.otpValue}>🔓 Unlocked via RFID</Text>
+          <Text style={styles.otpHint}>Cycle solenoid lock is open</Text>
         </View>
 
         {/* Timer Card */}

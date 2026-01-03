@@ -9,6 +9,19 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(bodyParser.json());
 
+// Request logging middleware
+app.use((req, res, next) => {
+  const timestamp = new Date().toISOString();
+  console.log(`\n[${ timestamp}] ${req.method} ${req.url}`);
+  if (req.method === 'POST' && req.body) {
+    console.log('Body:', JSON.stringify(req.body));
+  }
+  if (req.headers.authorization) {
+    console.log('Auth: Token present');
+  }
+  next();
+});
+
 // In-memory data store
 const station = {
   id: "station1",
@@ -16,10 +29,10 @@ const station = {
 };
 
 const cycles = [
-  { id: "A", name: "Cycle A", status: "AVAILABLE" },
-  { id: "B", name: "Cycle B", status: "AVAILABLE" },
-  { id: "C", name: "Cycle C", status: "AVAILABLE" },
-  { id: "D", name: "Cycle D", status: "IN_USE" }
+  { id: "A", name: "Cycle A", status: "AVAILABLE", rfidTag: "58274325810955" },
+  { id: "B", name: "Cycle B", status: "AVAILABLE", rfidTag: "83563908408000" },
+  { id: "C", name: "Cycle C", status: "AVAILABLE", rfidTag: "0004002724" },
+  { id: "D", name: "Cycle D", status: "IN_USE", rfidTag: "0004002725" }
 ];
 
 // In-memory user store (hardcoded for V0)
@@ -41,14 +54,22 @@ const activeBookings = new Map(); // token -> { cycleId, cycleName, startTime }
 // RFID to Cycle mapping (each cycle has an RFID tag)
 const rfidToCycle = new Map();
 rfidToCycle.set("0004002722", "A");    // Cycle A's RFID tag
+rfidToCycle.set("0004002723", "B");    // Cycle B's RFID tag
+rfidToCycle.set("0004002724", "C");    // Cycle C's RFID tag
+rfidToCycle.set("0004002725", "D");    // Cycle D's RFID tag
 
 
 
 // RFID scan logs (for analytics)
 const rfidLogs = [];
 
-// Unlock command flag (edge-triggered)
-let unlockFlag = false;
+// Unlock command (edge-triggered)
+let unlockCommand = {
+  pending: false,
+  cycleId: null,
+  rfidTag: null,
+  timestamp: null
+};
 
 // ESP32 API Key for security
 const ESP32_API_KEY = process.env.ESP32_KEY || "CAMPUS_CYCLE_ESP32_SECRET";
@@ -68,9 +89,18 @@ function setCycleStatus(cycleId, status) {
 }
 
 function unlockCycle(cycleId) {
-  // Set unlock flag for ESP32 polling
-  unlockFlag = true;
-  console.log(`🔓 Unlocking cycle ${cycleId} - ESP32 unlock flag SET`);
+  const cycle = cycles.find(c => c.id === cycleId);
+  if (cycle && cycle.rfidTag) {
+    unlockCommand = {
+      pending: true,
+      cycleId: cycleId,
+      rfidTag: cycle.rfidTag,
+      timestamp: new Date().toISOString()
+    };
+    console.log(`🔓 UNLOCK REQUEST: Cycle ${cycleId} (RFID: ${cycle.rfidTag}) - Status: ${cycle.status} → IN_USE`);
+  } else {
+    console.log(`❌ Cannot unlock cycle ${cycleId} - RFID tag missing`);
+  }
 }
 
 function lockCycle(cycleId) {
@@ -78,9 +108,6 @@ function lockCycle(cycleId) {
   console.log(`🔒 Locking cycle ${cycleId} - handled by ESP32`);
 }
 
-function generateOTP() {
-  return Math.floor(100000 + Math.random() * 900000).toString();
-}
 
 function generateSessionToken() {
   return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
@@ -162,14 +189,21 @@ app.get('/api/cycles', authenticate, (req, res) => {
 
 // Book a cycle
 app.post('/api/book', authenticate, (req, res) => {
+  console.log('\n🎯 BOOK ENDPOINT HIT');
+  console.log('User:', req.user?.username);
+  console.log('Request body:', req.body);
+  
   const { cycleId } = req.body;
   
   if (!cycleId) {
+    console.log('❌ ERROR: cycleId missing in request');
     return res.status(400).json({
       success: false,
       message: 'cycleId is required'
     });
   }
+  
+  console.log('✅ cycleId received:', cycleId);
   
   const cycle = cycles.find(c => c.id === cycleId);
   
@@ -191,7 +225,6 @@ app.post('/api/book', authenticate, (req, res) => {
   setCycleStatus(cycleId, 'IN_USE');
   unlockCycle(cycleId); // Hardware compatibility function
   
-  const otp = generateOTP();
   const bookingTime = new Date().toISOString();
   
   // Store active booking
@@ -199,17 +232,19 @@ app.post('/api/book', authenticate, (req, res) => {
     cycleId,
     cycleName: cycle.name,
     startTime: bookingTime,
-    otp
+    unlockMethod: 'HARDWARE_RFID'
   });
   
-  console.log(`📱 Cycle ${cycleId} booked successfully, OTP: ${otp}`);
+  console.log(`📱 Cycle ${cycleId} booked by ${req.user.username} - Hardware unlock triggered`);
   
   res.json({
     success: true,
-    message: 'Cycle booked successfully',
+    message: 'Cycle unlocked via hardware',
     cycle: cycle,
-    otp: otp,
-    bookingTime: bookingTime
+    rfidTag: cycle.rfidTag,
+    unlockMethod: 'HARDWARE_RFID',
+    bookingTime: bookingTime,
+    note: 'ESP32 will unlock solenoid when it polls /command endpoint'
   });
 });
 
@@ -386,7 +421,7 @@ app.post('/rfid', (req, res) => {
       
       activeBookings.delete(userToken);
       
-      console.log(`✅ ${cycle.name} returned via RFID by ${username} (${duration} min ride)`);
+      console.log(`✅ CYCLE RETURNED: ${cycle.name} by ${username} (${duration} min) - Status: IN_USE → AVAILABLE`);
       
       return res.json({
         success: true,
@@ -425,13 +460,22 @@ app.post('/rfid', (req, res) => {
 
 // GET /command - ESP32 polls this for unlock commands
 app.get('/command', (req, res) => {
-  // Return current unlock flag
-  const response = { unlock: unlockFlag };
+  // Return current unlock command
+  const response = {
+    unlock: unlockCommand.pending,
+    cycleId: unlockCommand.cycleId,
+    rfidTag: unlockCommand.rfidTag
+  };
   
-  // Edge-triggered: reset flag after sending
-  if (unlockFlag) {
-    console.log(`📡 Unlock command sent to ESP32`);
-    unlockFlag = false; // Reset immediately (edge-triggered)
+  // Edge-triggered: reset after sending
+  if (unlockCommand.pending) {
+    console.log(`📡 ESP32 POLLING: Sending unlock for Cycle ${unlockCommand.cycleId} (RFID: ${unlockCommand.rfidTag})`);
+    unlockCommand = {
+      pending: false,
+      cycleId: null,
+      rfidTag: null,
+      timestamp: null
+    };
   }
   
   res.json(response);
@@ -439,12 +483,20 @@ app.get('/command', (req, res) => {
 
 // POST /command/unlock - Expo app calls this to trigger unlock
 app.post('/command/unlock', authenticate, (req, res) => {
-  unlockFlag = true;
-  console.log(`🎯 Unlock triggered by ${req.user.username} via app`);
+  const { cycleId } = req.body;
+  
+  if (!cycleId) {
+    return res.status(400).json({ success: false, message: 'cycleId required' });
+  }
+  
+  unlockCycle(cycleId);
+  console.log(`🎯 Manual unlock triggered by ${req.user.username} for Cycle ${cycleId}`);
   
   res.json({
     success: true,
     message: 'Unlock command sent',
+    cycleId: cycleId,
+    rfidTag: cycles.find(c => c.id === cycleId)?.rfidTag,
     note: 'ESP32 will receive in next poll cycle (≤2 seconds)'
   });
 });
@@ -514,9 +566,13 @@ app.get('/api/rfid/tags', authenticate, (req, res) => {
 app.get('/api/hardware/status', (req, res) => {
   res.json({
     success: true,
-    unlockPending: unlockFlag,
+    unlockCommand: unlockCommand,
     registeredTags: rfidToCycle.size,
-    activeBookings: activeBookings.size,
+    activeBookings: Array.from(activeBookings.entries()).map(([token, booking]) => ({
+      username: sessions.get(token)?.username,
+      ...booking
+    })),
+    cycles: cycles.map(c => ({ id: c.id, name: c.name, status: c.status, rfidTag: c.rfidTag })),
     recentScans: rfidLogs.slice(-5)
   });
 });

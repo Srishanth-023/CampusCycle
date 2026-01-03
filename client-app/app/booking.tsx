@@ -49,26 +49,33 @@ const BookingScreen = () => {
   }, []);
 
   const handleBookCycle = async (cycleId: string, cycleName: string) => {
+    console.log('🎯 handleBookCycle called:', { cycleId, cycleName });
     Alert.alert(
-      'Book Cycle',
-      `Do you want to book ${cycleName}?`,
+      'Unlock Cycle',
+      `Do you want to unlock ${cycleName}?`,
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: 'Cancel', style: 'cancel', onPress: () => console.log('❌ User cancelled unlock') },
         {
-          text: 'Book',
+          text: 'Unlock',
           onPress: async () => {
+            console.log('✅ User confirmed unlock, starting process...');
             setLoading(true);
             try {
+              console.log('📡 Calling bookCycle API with cycleId:', cycleId);
               const result = await bookCycle(cycleId);
+              console.log('📥 bookCycle response:', result);
               if (result.success) {
+                console.log('✅ Unlock successful!');
                 Alert.alert(
-                  'Booking Successful! 🎉',
-                  `${cycleName} booked successfully!\n\n🔑 OTP: ${result.otp}\n\nUse this OTP to unlock the cycle.`
+                  'Unlocked! 🔓',
+                  `${cycleName} unlocked successfully!\n\n✅ Hardware solenoid activated\n🔖 RFID: ${result.rfidTag}\n⚡ Method: ${result.unlockMethod}\n\nThe cycle is ready to use!`
                 );
               } else {
-                Alert.alert('Booking Failed', result.message || 'Could not book cycle');
+                console.log('❌ Unlock failed:', result.message);
+                Alert.alert('Unlock Failed', result.message || 'Could not unlock cycle');
               }
             } catch (error: any) {
+              console.error('❌ Exception in handleBookCycle:', error);
               Alert.alert('Error', error.message);
             } finally {
               setLoading(false);
@@ -148,15 +155,15 @@ const BookingScreen = () => {
         <View style={styles.headerSpacer} />
       </View>
 
-      {/* OTP Banner */}
+      {/* Active Booking Banner */}
       {activeBooking && (
         <View style={styles.otpBanner}>
           <View style={styles.otpIconContainer}>
-            <Ionicons name="key" size={24} color="#856404" />
+            <Ionicons name="lock-open" size={24} color="#856404" />
           </View>
           <View style={styles.otpInfo}>
             <Text style={styles.otpLabel}>Active Booking - {activeBooking.cycleName}</Text>
-            <Text style={styles.otpValue}>{activeBooking.otp}</Text>
+            <Text style={styles.otpValue}>🔓 Hardware Unlocked</Text>
           </View>
           <TouchableOpacity
             style={styles.viewStatusButton}

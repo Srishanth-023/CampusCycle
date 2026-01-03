@@ -7,7 +7,7 @@ import { Platform } from 'react-native';
 // Auto-detect: use localhost for web, IP for native mobile
 const API_BASE_URL = Platform.OS === 'web' 
   ? 'http://localhost:3000/api'
-  : 'http://10.133.181.248:3000/api'; // Change this IP to your computer's IP for mobile testing
+  : 'http://10.147.233.168:3000/api'; // Change this IP to your computer's IP for mobile testing
 
 export interface User {
   username: string;
@@ -57,8 +57,10 @@ export interface BookingResponse {
   success: boolean;
   message: string;
   cycle: Cycle;
-  otp: string;
+  rfidTag: string;
+  unlockMethod: string;
   bookingTime: string;
+  note?: string;
 }
 
 export interface ReturnResponse {
@@ -163,6 +165,10 @@ class ApiService {
   }
 
   async bookCycle(cycleId: string): Promise<BookingResponse> {
+    console.log('🌐 API Service: bookCycle called');
+    console.log('   URL:', `${API_BASE_URL}/book`);
+    console.log('   Cycle ID:', cycleId);
+    console.log('   Token:', this.token ? 'Present' : 'MISSING');
     return this.request<BookingResponse>('/book', 'POST', { cycleId });
   }
 

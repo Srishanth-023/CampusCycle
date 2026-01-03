@@ -5,7 +5,7 @@ import apiService, { User, Cycle, Station, RideHistory } from '../services/api';
 interface ActiveBooking {
   cycleId: string;
   cycleName: string;
-  otp: string;
+  unlockMethod: string;
   bookingTime: string;
 }
 
@@ -21,7 +21,7 @@ interface AuthContextType {
   login: (username: string, password: string) => Promise<boolean>;
   logout: () => Promise<void>;
   fetchCycles: () => Promise<void>;
-  bookCycle: (cycleId: string) => Promise<{ success: boolean; otp?: string; message?: string }>;
+  bookCycle: (cycleId: string) => Promise<{ success: boolean; message?: string; rfidTag?: string; unlockMethod?: string }>;
   returnCycle: (cycleId: string) => Promise<{ success: boolean; rideStats?: any; message?: string }>;
   fetchHistory: () => Promise<void>;
   testConnection: () => Promise<{ success: boolean; message: string }>;
@@ -142,29 +142,41 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  const bookCycle = async (cycleId: string): Promise<{ success: boolean; otp?: string; message?: string }> => {
+  const bookCycle = async (cycleId: string): Promise<{ success: boolean; message?: string; rfidTag?: string; unlockMethod?: string }> => {
+    console.log('📞 AuthContext.bookCycle called with cycleId:', cycleId);
     try {
+      console.log('📡 Calling apiService.bookCycle...');
       const response = await apiService.bookCycle(cycleId);
+      console.log('📥 API response received:', response);
       
       if (response.success) {
         const booking: ActiveBooking = {
           cycleId: response.cycle.id,
           cycleName: response.cycle.name,
-          otp: response.otp,
+          unlockMethod: response.unlockMethod || 'HARDWARE_RFID',
           bookingTime: response.bookingTime,
         };
         
+        console.log('💾 Saving booking to storage:', booking);
         setActiveBooking(booking);
         await AsyncStorage.setItem(ACTIVE_BOOKING_KEY, JSON.stringify(booking));
         
         // Refresh cycles list
+        console.log('🔄 Refreshing cycles list...');
         await fetchCycles();
         
-        return { success: true, otp: response.otp };
+        return { 
+          success: true, 
+          message: response.message,
+          rfidTag: response.rfidTag,
+          unlockMethod: response.unlockMethod
+        };
       }
       
+      console.log('❌ Booking failed:', response.message);
       return { success: false, message: response.message };
     } catch (error: any) {
+      console.error('❌ Exception in bookCycle:', error);
       return { success: false, message: error.message };
     }
   };
