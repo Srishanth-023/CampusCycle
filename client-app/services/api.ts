@@ -7,7 +7,7 @@ import { Platform } from 'react-native';
 // Auto-detect: use localhost for web, IP for native mobile
 const API_BASE_URL = Platform.OS === 'web' 
   ? 'http://localhost:3000/api'
-  : 'http://10.147.233.248:3000/api'; // Change this IP to your computer's IP for mobile testing
+  : 'http://10.208.67.248:3000/api'; // Change this IP to your computer's IP for mobile testing
 
 export interface User {
   username: string;

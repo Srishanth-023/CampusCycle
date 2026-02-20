@@ -10,8 +10,8 @@ const char* WIFI_SSID = "Xiaomi 14 Civi";
 const char* WIFI_PASS = "Helloooo";
 
 /* ================= BACKEND URLs ================= */
-const char* POST_URL = "http://10.208.67.154:3000/rfid";
-const char* GET_URL  = "http://10.208.67.154:3000/command";
+const char* POST_URL = "http://10.208.67.248:3000/rfid";
+const char* GET_URL  = "http://10.208.67.248:3000/command";
 
 /* ================= RFID VARIABLES ================= */
 String buffer = "";
