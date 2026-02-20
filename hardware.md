@@ -6,12 +6,12 @@
 #define RFID_RX_PIN 16
 
 /* ================= WIFI CONFIG ================= */
-const char* WIFI_SSID = "ANISH";
-const char* WIFI_PASS = "12345678";
+const char* WIFI_SSID = "Xiaomi 14 Civi";
+const char* WIFI_PASS = "Helloooo";
 
 /* ================= BACKEND URLs ================= */
-const char* POST_URL = "http://10.147.233.168:3000/rfid";
-const char* GET_URL  = "http://10.147.233.168:3000/command";
+const char* POST_URL = "http://10.208.67.154:3000/rfid";
+const char* GET_URL  = "http://10.208.67.154:3000/command";
 
 /* ================= RFID VARIABLES ================= */
 String buffer = "";
@@ -19,16 +19,13 @@ String stableUID = "";
 String lastUID = "";
 
 unsigned long lastCharTime = 0;
-const unsigned long frameGap = 50;
+const unsigned long frameGap   = 50;
 const unsigned long cardTimeout = 2000;
 
-/* ================= LOCK TIMERS ================= */
-const unsigned long reopenDelayRFID = 10000;   // 10 sec
-const unsigned long webOpenDuration = 20000;   // 20 sec
+bool cardPresent = false;   // ✅ LATCH FLAG
 
-bool lockClosedByRFID = false;
-unsigned long lockRFIDTime = 0;
-
+/* ================= WEB LOCK TIMERS ================= */
+const unsigned long webOpenDuration = 20000; // 20 sec
 bool webUnlockActive = false;
 unsigned long webUnlockTime = 0;
 
@@ -41,7 +38,7 @@ void setup() {
 
   pinMode(RELAY_PIN, OUTPUT);
 
-  openLock();   // 🔓 DEFAULT OPEN
+  openLock();   // 🔓 DEFAULT STATE
 
   connectWiFi();
 
@@ -49,19 +46,12 @@ void setup() {
   while (Serial2.available()) Serial2.read();
 
   Serial.println("SYSTEM READY");
-  Serial.println("LOCK STATUS: OPEN 🔓");
+  Serial.println("LOCK CONTROLLED BY WEB ONLY");
   Serial.println("--------------------------------");
 }
 
 /* ================= LOOP ================= */
 void loop() {
-
-  /* ---------- RFID AUTO REOPEN ---------- */
-  if (lockClosedByRFID && millis() - lockRFIDTime >= reopenDelayRFID) {
-    openLock();
-    lockClosedByRFID = false;
-    Serial.println("RFID AUTO OPEN 🔓");
-  }
 
   /* ---------- WEB AUTO CLOSE ---------- */
   if (webUnlockActive && millis() - webUnlockTime >= webOpenDuration) {
@@ -76,7 +66,7 @@ void loop() {
     lastPollTime = millis();
   }
 
-  /* ---------- READ RFID ---------- */
+  /* ---------- READ RFID RAW ---------- */
   while (Serial2.available()) {
     char c = Serial2.read();
     lastCharTime = millis();
@@ -94,7 +84,7 @@ void loop() {
 
     buffer = "";
 
-    if (stableUID != lastUID) {
+    if (!cardPresent) {   // ✅ READ ONLY ON NEW TAP
 
       unsigned long long decimalUID =
         strtoull(stableUID.c_str(), NULL, 16);
@@ -107,29 +97,29 @@ void loop() {
 
       sendRFID(String(decimalUID));
 
-      closeLock();
-      lockClosedByRFID = true;
-      lockRFIDTime = millis();
-
-      Serial.println("LOCK CLOSED BY RFID 🔒");
+      Serial.println("RFID SENT TO SERVER");
       Serial.println("--------------------------------");
 
       lastUID = stableUID;
+      cardPresent = true;   // 🔒 LATCH UNTIL REMOVAL
     }
   }
 
-  if (lastUID.length() > 0 && millis() - lastCharTime > cardTimeout) {
+  /* ---------- CARD REMOVAL DETECTION ---------- */
+  if (cardPresent && millis() - lastCharTime > cardTimeout) {
+    cardPresent = false;
     lastUID = "";
+    Serial.println("CARD REMOVED");
   }
 }
 
 /* ================= RELAY CONTROL ================= */
 void openLock() {
-  digitalWrite(RELAY_PIN, HIGH);   // OPEN
+  digitalWrite(RELAY_PIN, HIGH);
 }
 
 void closeLock() {
-  digitalWrite(RELAY_PIN, LOW);    // CLOSE
+  digitalWrite(RELAY_PIN, LOW);
 }
 
 /* ================= WIFI ================= */
@@ -177,8 +167,6 @@ void checkServerCommand() {
       openLock();
       webUnlockActive = true;
       webUnlockTime = millis();
-
-      lockClosedByRFID = false;  // override RFID
     }
   }
 
