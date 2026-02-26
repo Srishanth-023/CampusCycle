@@ -52,11 +52,12 @@ const activeBookings = new Map(); // token -> { cycleId, cycleName, startTime }
 
 // ===== ESP32 HARDWARE INTEGRATION =====
 // RFID to Cycle mapping (each cycle has an RFID tag)
+// Must match the rfidTag values in the cycles array above
 const rfidToCycle = new Map();
-rfidToCycle.set("0004002722", "A");    // Cycle A's RFID tag
-rfidToCycle.set("0004002723", "B");    // Cycle B's RFID tag
-rfidToCycle.set("0004002724", "C");    // Cycle C's RFID tag
-rfidToCycle.set("0004002725", "D");    // Cycle D's RFID tag
+rfidToCycle.set("58274325810955", "A");  // Cycle A's RFID tag
+rfidToCycle.set("83563908408000", "B");  // Cycle B's RFID tag
+rfidToCycle.set("0004002724", "C");      // Cycle C's RFID tag
+rfidToCycle.set("0004002725", "D");      // Cycle D's RFID tag
 
 
 
@@ -282,11 +283,15 @@ app.post('/api/return', authenticate, (req, res) => {
   // Get booking info before removing
   const booking = activeBookings.get(req.userToken);
   const endTime = new Date().toISOString();
-  
-  // Mock ride statistics
+
+  // Calculate actual duration from booking start time
+  const actualDuration = booking
+    ? Math.max(1, Math.floor((new Date() - new Date(booking.startTime)) / 60000))
+    : 1;
+
   const rideStats = {
-    duration: Math.floor(Math.random() * 60 + 15), // 15-75 minutes
-    distance: (Math.random() * 5 + 1).toFixed(1), // 1-6 km
+    duration: actualDuration,
+    distance: (Math.random() * 5 + 1).toFixed(1), // distance remains estimated
     returnTime: endTime
   };
   
@@ -306,6 +311,8 @@ app.post('/api/return', authenticate, (req, res) => {
     // Remove active booking
     activeBookings.delete(req.userToken);
   }
+
+  console.log(`📊 Ride stats: ${actualDuration} min | ${rideStats.distance} km`);
   
   console.log(`🚲 Cycle ${cycleId} returned successfully`);
   

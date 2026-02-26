@@ -26,6 +26,7 @@ const BookingScreen = () => {
     station, 
     cycles, 
     activeBooking,
+    isLoggedIn,
     fetchCycles, 
     bookCycle, 
     returnCycle 
@@ -45,8 +46,10 @@ const BookingScreen = () => {
   }, [fetchCycles]);
 
   useEffect(() => {
-    fetchCycles();
-  }, []);
+    if (isLoggedIn) {
+      fetchCycles();
+    }
+  }, [isLoggedIn]);
 
   const handleBookCycle = async (cycleId: string, cycleName: string) => {
     console.log('🎯 handleBookCycle called:', { cycleId, cycleName });

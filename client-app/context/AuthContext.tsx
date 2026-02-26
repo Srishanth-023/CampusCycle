@@ -60,13 +60,27 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         apiService.setToken(savedToken);
         setIsLoggedIn(true);
         
-        if (savedBooking) {
-          setActiveBooking(JSON.parse(savedBooking));
-        }
-
-        // Fetch cycles after restoring auth
+        // Fetch cycles after restoring auth, then validate the saved booking
         try {
-          await fetchCycles();
+          const cyclesResponse = await apiService.getCycles();
+          if (cyclesResponse.success) {
+            setCycles(cyclesResponse.cycles);
+            setStation(cyclesResponse.station);
+          }
+
+          if (savedBooking) {
+            const booking = JSON.parse(savedBooking);
+            const bookedCycle = cyclesResponse?.cycles?.find((c: { id: string; status: string }) => c.id === booking.cycleId);
+
+            if (bookedCycle && bookedCycle.status === 'IN_USE') {
+              // Cycle is still in use — restore the active booking
+              setActiveBooking(booking);
+            } else {
+              // Server was restarted or cycle was returned externally — discard stale booking
+              console.log('Stale booking detected (cycle not IN_USE on server), clearing local booking');
+              await AsyncStorage.removeItem(ACTIVE_BOOKING_KEY);
+            }
+          }
         } catch (error) {
           // If token is invalid, clear auth state
           console.log('Token expired, clearing auth state');
@@ -130,6 +144,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const fetchCycles = async () => {
+    if (!apiService.getToken()) return; // no token yet — skip silently
     try {
       const response = await apiService.getCycles();
       if (response.success) {

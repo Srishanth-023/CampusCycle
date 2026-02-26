@@ -6,12 +6,12 @@
 #define RFID_RX_PIN 16
 
 /* ================= WIFI CONFIG ================= */
-const char* WIFI_SSID = "Xiaomi 14 Civi";
-const char* WIFI_PASS = "Helloooo";
+const char* WIFI_SSID = "vivo V40e";
+const char* WIFI_PASS = "12345678";
 
 /* ================= BACKEND URLs ================= */
-const char* POST_URL = "http://10.208.67.248:3000/rfid";
-const char* GET_URL  = "http://10.208.67.248:3000/command";
+const char* POST_URL = "http://10.96.107.248:3000/rfid";
+const char* GET_URL  = "http://10.96.107.248:3000/command";
 
 /* ================= RFID VARIABLES ================= */
 String buffer = "";
